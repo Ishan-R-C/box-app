@@ -1,95 +1,136 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+"use client";
+import { useEffect, useRef, useState } from "react";
+import Script from "next/script";
 
 export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol>
-          <li>
-            Get started by editing <code>src/app/page.js</code>.
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [insideBox, setInsideBox] = useState(false);
 
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.secondary}
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+  useEffect(() => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+
+    // Resize canvas to container
+    const resizeCanvas = () => {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+    };
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
+
+    const interval = setInterval(() => {
+      if (window.Pose && window.Camera && window.drawLandmarks) {
+        clearInterval(interval);
+
+        const Pose = window.Pose;
+        const Camera = window.Camera;
+        const { drawLandmarks } = window;
+
+        const pose = new Pose({
+          locateFile: (file) =>
+            `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
+        });
+
+        pose.setOptions({
+          modelComplexity: 1,
+          smoothLandmarks: true,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+        });
+
+        pose.onResults((results) => {
+          const ctx = canvas.getContext("2d");
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+          const box = {
+            x: canvas.width * 0.2,
+            y: canvas.height * 0.2,
+            w: canvas.width * 0.6,
+            h: canvas.height * 0.6,
+          };
+
+          let allInside = true;
+          if (results.poseLandmarks) {
+            results.poseLandmarks.forEach((lm) => {
+              const x = lm.x * canvas.width;
+              const y = lm.y * canvas.height;
+              if (
+                x < box.x ||
+                x > box.x + box.w ||
+                y < box.y ||
+                y > box.y + box.h
+              ) {
+                allInside = false;
+              }
+            });
+            drawLandmarks(ctx, results.poseLandmarks, {
+              color: "blue",
+              lineWidth: 2,
+            });
+          }
+
+          ctx.strokeStyle = allInside ? "green" : "red";
+          ctx.lineWidth = 4;
+          ctx.strokeRect(box.x, box.y, box.w, box.h);
+
+          setInsideBox(allInside);
+        });
+
+        const camera = new Camera(videoRef.current, {
+          onFrame: async () => {
+            await pose.send({ image: videoRef.current });
+          },
+          width: canvas.width,
+          height: canvas.height,
+        });
+
+        navigator.mediaDevices
+          .getUserMedia({
+            video: { facingMode: { exact: "environment" } },
+          })
+          .then((stream) => {
+            videoRef.current.srcObject = stream;
+            camera.start();
+          })
+          .catch((err) => {
+            console.warn(
+              "Back camera not available, falling back to default:",
+              err
+            );
+            camera.start();
+          });
+      }
+    }, 200);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("resize", resizeCanvas);
+    };
+  }, []);
+
+  return (
+    <>
+      <Script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" />
+      <Script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" />
+      <Script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" />
+
+      <div className="flex flex-col items-center w-full max-w-2xl mx-auto">
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          style={{ display: "none" }}
+        />
+        <canvas ref={canvasRef} className="responsive-canvas border" />
+        <p className="mt-2">
+          {insideBox ? "All landmarks inside" : "Landmarks outside"}
+        </p>
+      </div>
+    </>
   );
 }
