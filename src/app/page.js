@@ -5,7 +5,7 @@ import Script from "next/script";
 export default function Home() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const [insideBox, setInsideBox] = useState(false);
+  const [statusMsg, setStatusMsg] = useState("No pose detected");
 
   useEffect(() => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -70,11 +70,17 @@ export default function Home() {
             h: canvas.height * 0.6,
           };
 
-          let allInside = false;
-          if (results.poseLandmarks) {
-            results.poseLandmarks.forEach((lm) => {
+          let allInside = false; // default: false (red)
+          let detected = false;
+
+          if (results.poseLandmarks && results.poseLandmarks.length > 0) {
+            detected = true;
+            allInside = true; // assume true, then check each landmark
+
+            for (const lm of results.poseLandmarks) {
               const x = lm.x * canvas.width;
               const y = lm.y * canvas.height;
+
               if (
                 x < box.x ||
                 x > box.x + box.w ||
@@ -82,21 +88,29 @@ export default function Home() {
                 y > box.y + box.h
               ) {
                 allInside = false;
-              } else {
-                allInside = true;
+                break;
               }
-            });
+            }
+
             drawLandmarks(ctx, results.poseLandmarks, {
               color: "blue",
               lineWidth: 2,
             });
           }
 
+          // Draw the bounding box
           ctx.strokeStyle = allInside ? "green" : "red";
           ctx.lineWidth = 4;
           ctx.strokeRect(box.x, box.y, box.w, box.h);
 
-          setInsideBox(allInside);
+          // Update status message
+          if (!detected) {
+            setStatusMsg("No pose detected");
+          } else if (allInside) {
+            setStatusMsg("All landmarks inside");
+          } else {
+            setStatusMsg("Landmarks outside");
+          }
         });
 
         const camera = new Camera(video, {
@@ -123,7 +137,7 @@ export default function Home() {
       <Script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" />
 
       <div className="w-full h-screen relative bg-black">
-        {/* video is hidden but used by MediaPipe */}
+        {/* hidden video (used by MediaPipe) */}
         <video
           ref={videoRef}
           autoPlay
@@ -138,8 +152,9 @@ export default function Home() {
           className="absolute top-0 left-0 w-full h-full"
         />
 
+        {/* status message */}
         <p className="absolute bottom-5 left-1/2 -translate-x-1/2 text-white text-lg font-bold bg-black/50 px-4 py-2 rounded z-10">
-          {insideBox ? "All landmarks inside" : "Landmarks outside"}
+          {statusMsg}
         </p>
       </div>
     </>
