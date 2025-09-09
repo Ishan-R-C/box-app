@@ -70,7 +70,7 @@ export default function Home() {
             h: canvas.height * 0.6,
           };
 
-          let allInside = true;
+          let allInside = false;
           if (results.poseLandmarks) {
             results.poseLandmarks.forEach((lm) => {
               const x = lm.x * canvas.width;
@@ -82,6 +82,8 @@ export default function Home() {
                 y > box.y + box.h
               ) {
                 allInside = false;
+              } else {
+                allInside = true;
               }
             });
             drawLandmarks(ctx, results.poseLandmarks, {
