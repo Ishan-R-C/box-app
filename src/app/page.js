@@ -20,11 +20,9 @@ export default function Home() {
         const windowAspect = window.innerWidth / window.innerHeight;
 
         if (aspect > windowAspect) {
-          // video is wider than screen
           canvas.width = window.innerWidth;
           canvas.height = window.innerWidth / aspect;
         } else {
-          // video is taller than screen
           canvas.height = window.innerHeight;
           canvas.width = window.innerHeight * aspect;
         }
@@ -116,18 +114,12 @@ export default function Home() {
       <Script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" />
 
       <div className="w-full h-screen relative bg-black">
-        <video
-          ref={videoRef}
-          autoPlay
-          muted
-          playsInline
-          className="absolute top-0 left-0 w-full h-full object-cover"
-          style={{ zIndex: 0 }}
-        />
+        {/* Hide video element */}
+        <video ref={videoRef} autoPlay muted playsInline className="hidden" />
+        {/* Only canvas is visible */}
         <canvas
           ref={canvasRef}
-          className="absolute top-0 left-0"
-          style={{ zIndex: 1 }}
+          className="absolute top-0 left-0 w-full h-full"
         />
         <p className="absolute bottom-5 left-1/2 -translate-x-1/2 text-white text-lg font-bold bg-black/50 px-4 py-2 rounded z-10">
           {insideBox ? "All landmarks inside" : "Landmarks outside"}
