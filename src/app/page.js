@@ -12,11 +12,10 @@ export default function Home() {
 
     const canvas = canvasRef.current;
 
-    // Resize canvas to container
+    // Resize canvas to full screen
     const resizeCanvas = () => {
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = rect.width;
-      canvas.height = rect.height;
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
     };
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
@@ -78,14 +77,14 @@ export default function Home() {
           setInsideBox(allInside);
         });
 
-        // MediaPipe Camera - back camera support
+        // Initialize MediaPipe Camera
         const camera = new Camera(videoRef.current, {
           onFrame: async () => {
             await pose.send({ image: videoRef.current });
           },
           width: canvas.width,
           height: canvas.height,
-          facingMode: "environment", // tries to use back camera
+          facingMode: "environment", // back camera
         });
 
         camera.start();
@@ -104,7 +103,8 @@ export default function Home() {
       <Script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" />
       <Script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" />
 
-      <div className="flex flex-col items-center w-full max-w-2xl mx-auto">
+      <div className="w-full h-screen relative">
+        {/* Hidden video input */}
         <video
           ref={videoRef}
           autoPlay
@@ -112,8 +112,15 @@ export default function Home() {
           playsInline
           style={{ display: "none" }}
         />
-        <canvas ref={canvasRef} className="responsive-canvas border" />
-        <p className="mt-2">
+
+        {/* Fullscreen canvas */}
+        <canvas
+          ref={canvasRef}
+          className="absolute top-0 left-0 w-full h-full"
+        />
+
+        {/* Overlay text */}
+        <p className="absolute bottom-5 left-1/2 -translate-x-1/2 text-white text-lg font-bold bg-black/50 px-4 py-2 rounded">
           {insideBox ? "All landmarks inside" : "Landmarks outside"}
         </p>
       </div>
