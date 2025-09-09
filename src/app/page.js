@@ -1,11 +1,10 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import Script from "next/script";
 
 export default function Home() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const [statusMsg, setStatusMsg] = useState("No pose detected");
 
   useEffect(() => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -22,7 +21,6 @@ export default function Home() {
     window.addEventListener("resize", resizeCanvas);
     resizeCanvas();
 
-    // wait for mediapipe libs to load
     const interval = setInterval(() => {
       if (window.Pose && window.Camera && window.drawLandmarks) {
         clearInterval(interval);
@@ -42,35 +40,30 @@ export default function Home() {
         });
 
         pose.onResults((results) => {
-          // clear full canvas
           ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-          // Sanity: results.image should be available
           if (!results.image) return;
 
-          // Fit video into canvas with aspect ratio preserved (letterbox/pillarbox)
+          // Fit video into canvas with aspect ratio preserved
           const videoAspect = results.image.width / results.image.height;
           const canvasAspect = canvas.width / canvas.height;
 
           let drawWidth, drawHeight, offsetX, offsetY;
           if (videoAspect > canvasAspect) {
-            // video wider than canvas: fit width, letterbox vertical
             drawWidth = canvas.width;
             drawHeight = canvas.width / videoAspect;
             offsetX = 0;
             offsetY = (canvas.height - drawHeight) / 2;
           } else {
-            // video taller than canvas: fit height, pillarbox horizontal
             drawHeight = canvas.height;
             drawWidth = canvas.height * videoAspect;
             offsetY = 0;
             offsetX = (canvas.width - drawWidth) / 2;
           }
 
-          // draw the camera frame into the computed area
           ctx.drawImage(results.image, offsetX, offsetY, drawWidth, drawHeight);
 
-          // bounding box *relative to the drawn video area* (not full canvas)
+          // Bounding box (relative to video area)
           const box = {
             x: offsetX + drawWidth * 0.2,
             y: offsetY + drawHeight * 0.2,
@@ -85,7 +78,6 @@ export default function Home() {
             detected = true;
             allInside = true;
 
-            // remap normalized landmarks into pixel coordinates in the drawn video area
             const remappedLandmarks = results.poseLandmarks.map((lm) => ({
               x: offsetX + lm.x * drawWidth,
               y: offsetY + lm.y * drawHeight,
@@ -93,7 +85,6 @@ export default function Home() {
               visibility: lm.visibility,
             }));
 
-            // check whether every remapped landmark is inside the box
             for (const lm of remappedLandmarks) {
               if (
                 lm.x < box.x ||
@@ -106,26 +97,30 @@ export default function Home() {
               }
             }
 
-            // draw landmarks/skeleton using the remapped (pixel) coordinates
-            // drawLandmarks from MediaPipe accepts pixel coords here (works with remapped values)
             drawLandmarks(ctx, remappedLandmarks, {
               color: "cyan",
               lineWidth: 2,
             });
           }
 
-          // draw the bounding box (pixel coords)
+          // Draw bounding box
           ctx.strokeStyle = allInside ? "green" : "red";
           ctx.lineWidth = 4;
           ctx.strokeRect(box.x, box.y, box.w, box.h);
 
-          // status text
-          if (!detected) setStatusMsg("No pose detected");
-          else if (allInside) setStatusMsg("All landmarks inside");
-          else setStatusMsg("Landmarks outside");
+          // If box is red, show text right below
+          if (detected && !allInside) {
+            ctx.font = "45px sans-serif";
+            ctx.fillStyle = "red";
+            ctx.textAlign = "center";
+            ctx.fillText(
+              "Fit the subject within the box",
+              box.x + box.w / 2,
+              box.y + box.h + 50
+            );
+          }
         });
 
-        // camera - ask for back camera on mobile
         const camera = new Camera(video, {
           onFrame: async () => {
             await pose.send({ image: video });
@@ -157,15 +152,10 @@ export default function Home() {
           playsInline
           style={{ display: "none" }}
         />
-
         <canvas
           ref={canvasRef}
           className="absolute top-0 left-0 w-full h-full"
         />
-
-        <p className="absolute bottom-5 left-1/2 -translate-x-1/2 text-white text-lg font-bold bg-black/50 px-4 py-2 rounded z-10">
-          {statusMsg}
-        </p>
       </div>
     </>
   );
