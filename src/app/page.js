@@ -15,21 +15,12 @@ export default function Home() {
     const ctx = canvas.getContext("2d");
 
     const resizeCanvas = () => {
-      if (video.videoWidth && video.videoHeight) {
-        const aspect = video.videoWidth / video.videoHeight;
-        const windowAspect = window.innerWidth / window.innerHeight;
-
-        if (aspect > windowAspect) {
-          canvas.width = window.innerWidth;
-          canvas.height = window.innerWidth / aspect;
-        } else {
-          canvas.height = window.innerHeight;
-          canvas.width = window.innerHeight * aspect;
-        }
-      }
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
     };
 
     window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
 
     const interval = setInterval(() => {
       if (window.Pose && window.Camera && window.drawLandmarks) {
@@ -50,12 +41,28 @@ export default function Home() {
         });
 
         pose.onResults((results) => {
-          if (!video.videoWidth || !video.videoHeight) return;
-          resizeCanvas();
-
           ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
+          // Fit the video frame to canvas
+          const videoAspect = results.image.width / results.image.height;
+          const canvasAspect = canvas.width / canvas.height;
+
+          let drawWidth, drawHeight, offsetX, offsetY;
+          if (videoAspect > canvasAspect) {
+            drawWidth = canvas.width;
+            drawHeight = canvas.width / videoAspect;
+            offsetX = 0;
+            offsetY = (canvas.height - drawHeight) / 2;
+          } else {
+            drawHeight = canvas.height;
+            drawWidth = canvas.height * videoAspect;
+            offsetY = 0;
+            offsetX = (canvas.width - drawWidth) / 2;
+          }
+
+          ctx.drawImage(results.image, offsetX, offsetY, drawWidth, drawHeight);
+
+          // Draw bounding box
           const box = {
             x: canvas.width * 0.2,
             y: canvas.height * 0.2,
@@ -114,13 +121,21 @@ export default function Home() {
       <Script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" />
 
       <div className="w-full h-screen relative bg-black">
-        {/* Hide video element */}
-        <video ref={videoRef} autoPlay muted playsInline className="hidden" />
-        {/* Only canvas is visible */}
+        {/* video is hidden but used by MediaPipe */}
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          style={{ display: "none" }}
+        />
+
+        {/* canvas fills the screen */}
         <canvas
           ref={canvasRef}
           className="absolute top-0 left-0 w-full h-full"
         />
+
         <p className="absolute bottom-5 left-1/2 -translate-x-1/2 text-white text-lg font-bold bg-black/50 px-4 py-2 rounded z-10">
           {insideBox ? "All landmarks inside" : "Landmarks outside"}
         </p>
