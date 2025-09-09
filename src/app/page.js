@@ -25,9 +25,7 @@ export default function Home() {
       if (window.Pose && window.Camera && window.drawLandmarks) {
         clearInterval(interval);
 
-        const Pose = window.Pose;
-        const Camera = window.Camera;
-        const { drawLandmarks } = window;
+        const { Pose, Camera, drawLandmarks } = window;
 
         const pose = new Pose({
           locateFile: (file) =>
@@ -80,29 +78,17 @@ export default function Home() {
           setInsideBox(allInside);
         });
 
+        // MediaPipe Camera - back camera support
         const camera = new Camera(videoRef.current, {
           onFrame: async () => {
             await pose.send({ image: videoRef.current });
           },
           width: canvas.width,
           height: canvas.height,
+          facingMode: "environment", // tries to use back camera
         });
 
-        navigator.mediaDevices
-          .getUserMedia({
-            video: { facingMode: { exact: "environment" } },
-          })
-          .then((stream) => {
-            videoRef.current.srcObject = stream;
-            camera.start();
-          })
-          .catch((err) => {
-            console.warn(
-              "Back camera not available, falling back to default:",
-              err
-            );
-            camera.start();
-          });
+        camera.start();
       }
     }, 200);
 
