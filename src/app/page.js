@@ -1,61 +1,68 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import Script from "next/script";
 
 export default function Home() {
   const videoRef = useRef(null);
-  const canvasRef = useRef(null);
+  const canvasRef = useRef(null); // recording canvas
+  const overlayCanvasRef = useRef(null); // overlay-only canvas
 
-  // State for recording
+  const cameraRef = useRef(null);
+  const poseRef = useRef(null);
+
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
 
-  // Dynamically load MediaPipe scripts
   useEffect(() => {
-    const scripts = [
-      "https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js",
-      "https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js",
-      "https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js",
-    ];
-
-    scripts.forEach((src) => {
-      const script = document.createElement("script");
-      script.src = src;
-      script.crossOrigin = "anonymous";
-      script.async = true;
-      document.head.appendChild(script);
-    });
-  }, []); // Run only once on component mount
-
-  useEffect(() => {
-    // Ensure refs are available
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!videoRef.current || !canvasRef.current || !overlayCanvasRef.current)
+      return;
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
+    const overlayCanvas = overlayCanvasRef.current;
     const ctx = canvas.getContext("2d");
-
-    let camera = null;
-    let pose = null;
+    const overlayCtx = overlayCanvas.getContext("2d");
 
     const resizeCanvas = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      overlayCanvas.width = window.innerWidth;
+      overlayCanvas.height = window.innerHeight;
     };
 
     window.addEventListener("resize", resizeCanvas);
-    resizeCanvas(); // Initial resize
+    resizeCanvas();
 
-    const interval = setInterval(() => {
-      if (window.Pose && window.Camera && window.drawLandmarks) {
+    let interval = setInterval(() => {
+      if (window.Pose && window.Camera) {
         clearInterval(interval);
 
-        const { Pose, Camera, drawLandmarks } = window;
+        const { Pose, Camera } = window;
 
-        pose = new Pose({
+        const drawLandmarksFn =
+          window.drawLandmarks ||
+          function (ctx, landmarks = [], opts = {}) {
+            const color = opts.color || "cyan";
+            const lineWidth = opts.lineWidth || 2;
+            ctx.fillStyle = color;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth;
+            for (let i = 0; i < landmarks.length; i++) {
+              const p = landmarks[i];
+              if (typeof p.x === "number" && typeof p.y === "number") {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
+          };
+
+        const pose = new Pose({
           locateFile: (file) =>
             `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
         });
+        poseRef.current = pose;
 
         pose.setOptions({
           modelComplexity: 1,
@@ -66,11 +73,13 @@ export default function Home() {
 
         pose.onResults((results) => {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
+          overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
           if (!results.image) return;
 
           const videoAspect = results.image.width / results.image.height;
           const canvasAspect = canvas.width / canvas.height;
+
           let drawWidth, drawHeight, offsetX, offsetY;
 
           if (videoAspect > canvasAspect) {
@@ -84,6 +93,8 @@ export default function Home() {
             offsetY = 0;
             offsetX = (canvas.width - drawWidth) / 2;
           }
+
+          // Draw video on recording canvas
           ctx.drawImage(results.image, offsetX, offsetY, drawWidth, drawHeight);
 
           const box = {
@@ -118,38 +129,40 @@ export default function Home() {
                 break;
               }
             }
-            drawLandmarks(ctx, remappedLandmarks, {
-              color: "cyan",
-              lineWidth: 2,
-            });
+
+            try {
+              // Draw landmarks on recording canvas
+              drawLandmarksFn(ctx, remappedLandmarks, {
+                color: "cyan",
+                lineWidth: 2,
+              });
+            } catch (e) {}
           }
 
-          ctx.strokeStyle = allInside ? "green" : "red";
-          ctx.lineWidth = 4;
-          ctx.strokeRect(box.x, box.y, box.w, box.h);
+          // Draw guidance box + text only on overlay canvas
+          overlayCtx.strokeStyle = allInside ? "green" : "red";
+          overlayCtx.lineWidth = 4;
+          overlayCtx.strokeRect(box.x, box.y, box.w, box.h);
 
           if (detected && !allInside) {
-            ctx.font = "bold 32px sans-serif";
-            ctx.fillStyle = "white";
-            ctx.textAlign = "center";
-            ctx.shadowColor = "black";
-            ctx.shadowBlur = 10;
-            ctx.fillText(
+            overlayCtx.font = "28px sans-serif";
+            overlayCtx.fillStyle = "red";
+            overlayCtx.textAlign = "center";
+            overlayCtx.fillText(
               "Fit the subject within the box",
-              canvas.width / 2,
-              canvas.height - 50
+              box.x + box.w / 2,
+              box.y + box.h - 24
             );
-            ctx.shadowBlur = 0;
           }
         });
 
-        camera = new Camera(video, {
+        const camera = new Camera(video, {
           onFrame: async () => {
             await pose.send({ image: video });
           },
           facingMode: "environment",
         });
-
+        cameraRef.current = camera;
         camera.start();
       }
     }, 150);
@@ -158,13 +171,20 @@ export default function Home() {
       clearInterval(interval);
       window.removeEventListener("resize", resizeCanvas);
 
-      if (camera && camera.video && camera.video.srcObject) {
-        camera.video.srcObject.getTracks().forEach((track) => track.stop());
-      }
+      try {
+        if (cameraRef.current?.video) {
+          const tracks = cameraRef.current.video.srcObject?.getTracks();
+          tracks?.forEach((t) => t.stop());
+        }
+      } catch (e) {}
 
-      if (pose && typeof pose.close === "function") {
-        pose.close();
-      }
+      try {
+        if (cameraRef.current?.stop) cameraRef.current.stop();
+      } catch (e) {}
+
+      try {
+        poseRef.current?.close?.();
+      } catch (e) {}
     };
   }, []);
 
@@ -177,86 +197,159 @@ export default function Home() {
         mediaRecorderRef.current.stop();
       }
       setIsRecording(false);
-    } else {
-      const stream = canvasRef.current?.captureStream(30);
-      if (!stream) {
-        console.error("No canvas stream available to record.");
-        return;
-      }
-
-      recordedChunksRef.current = [];
-      const options = { mimeType: "video/webm; codecs=vp9" };
-      try {
-        mediaRecorderRef.current = new MediaRecorder(stream, options);
-      } catch (e) {
-        console.error("Failed to create MediaRecorder:", e);
-        return;
-      }
-
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          recordedChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorderRef.current.onstop = () => {
-        const blob = new Blob(recordedChunksRef.current, {
-          type: "video/webm",
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        document.body.appendChild(a);
-        a.style.display = "none";
-        a.href = url;
-        a.download = `recorded-pose-${new Date().toISOString()}.webm`;
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      };
-
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
+      return;
     }
+
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      console.error("Canvas not available for recording.");
+      return;
+    }
+
+    const stream =
+      typeof canvas.captureStream === "function"
+        ? canvas.captureStream(30)
+        : videoRef.current?.srcObject;
+
+    if (!stream) {
+      console.error("No capture stream available.");
+      return;
+    }
+
+    recordedChunksRef.current = [];
+
+    const preferredTypes = [
+      "video/webm;codecs=vp9",
+      "video/webm;codecs=vp8",
+      "video/webm",
+    ];
+    let options = {};
+    for (const t of preferredTypes) {
+      if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) {
+        options.mimeType = t;
+        break;
+      }
+    }
+
+    try {
+      mediaRecorderRef.current = new MediaRecorder(stream, options);
+    } catch (err) {
+      try {
+        mediaRecorderRef.current = new MediaRecorder(stream);
+      } catch (e) {
+        console.error("MediaRecorder creation failed:", e);
+        return;
+      }
+    }
+
+    mediaRecorderRef.current.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        recordedChunksRef.current.push(event.data);
+      }
+    };
+
+    mediaRecorderRef.current.onstop = () => {
+      const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.style.display = "none";
+      a.href = url;
+      a.download = `recorded-pose-${new Date().toISOString()}.webm`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        a.remove();
+      }, 1000);
+    };
+
+    mediaRecorderRef.current.start();
+    setIsRecording(true);
   };
 
+  const bottomButtonStyle = {
+    position: "absolute",
+    zIndex: 999999,
+    left: "50%",
+    bottom: "30px",
+    transform: "translateX(-50%)",
+    padding: "16px 32px",
+    fontSize: "18px",
+    borderRadius: "999px",
+    fontWeight: 700,
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    cursor: "pointer",
+    background: isRecording ? "#e03b3b" : "#2563eb",
+    color: "#ffffff",
+    boxShadow: "0 10px 25px rgba(0,0,0,0.4)",
+    border: "none",
+  };
+
+  const canvasStyle = {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    zIndex: 0,
+  };
+
+  const hiddenVideoStyle = { display: "none" };
+
   return (
-    <main className="w-screen h-screen bg-black overflow-hidden">
-      {/* This relative container ensures correct layering */}
-      <div className="relative w-full h-full">
-        {/* Hidden video element (no z-index needed) */}
+    <>
+      <Script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" />
+      <Script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" />
+      <Script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" />
+
+      <div
+        style={{
+          width: "100%",
+          height: "100vh",
+          position: "relative",
+          background: "black",
+        }}
+      >
         <video
           ref={videoRef}
           autoPlay
           muted
           playsInline
-          style={{ display: "none" }}
+          style={hiddenVideoStyle}
         />
 
-        {/* Canvas is layer 1 */}
+        <button onClick={handleToggleRecording} style={bottomButtonStyle}>
+          <span
+            style={{
+              width: 12,
+              height: 12,
+              borderRadius: "50%",
+              background: isRecording ? "#ffffff" : "#ff7b7b",
+              display: "inline-block",
+              animation: isRecording ? "pulse 1s infinite" : "none",
+            }}
+          />
+          {isRecording ? "Stop Recording" : "Start Recording"}
+        </button>
+
+        {/* Recording canvas */}
+        <canvas ref={canvasRef} style={canvasStyle} />
+
+        {/* Overlay canvas (not recorded) */}
         <canvas
-          ref={canvasRef}
-          className="absolute top-0 left-0 w-full h-full z-10"
+          ref={overlayCanvasRef}
+          style={{ ...canvasStyle, zIndex: 1, pointerEvents: "none" }}
         />
 
-        {/* UI Controls are layer 2, ensuring they are on top of the canvas */}
-        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20">
-          <button
-            onClick={handleToggleRecording}
-            className={`px-6 py-3 rounded-full text-white font-semibold shadow-lg transition-all duration-300 flex items-center gap-3 focus:outline-none focus:ring-4 focus:ring-opacity-50 ${
-              isRecording
-                ? "bg-red-600 hover:bg-red-700 focus:ring-red-400"
-                : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-400"
-            }`}
-          >
-            <span
-              className={`w-4 h-4 rounded-full transition-all ${
-                isRecording ? "bg-white animate-pulse" : "bg-red-500"
-              }`}
-            ></span>
-            {isRecording ? "Stop Recording" : "Start Recording"}
-          </button>
-        </div>
+        <style>{`
+          @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.4); opacity: 0.6; }
+            100% { transform: scale(1); opacity: 1; }
+          }
+        `}</style>
       </div>
-    </main>
+    </>
   );
 }

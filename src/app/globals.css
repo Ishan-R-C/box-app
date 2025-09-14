@@ -50,3 +50,63 @@ html,
 body {
   overflow-y: hidden; /* disables vertical scrolling */
 }
+
+.record-btn {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  padding: 12px 24px;
+  border-radius: 9999px;
+
+  font-weight: 600;
+  color: white;
+
+  background-color: #2563eb; /* blue-600 */
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+
+  transition: background-color 0.3s ease;
+  cursor: pointer;
+}
+
+.record-btn:hover {
+  background-color: #1d4ed8; /* blue-700 */
+}
+
+.record-btn.recording {
+  background-color: #dc2626; /* red-600 */
+}
+
+.record-btn.recording:hover {
+  background-color: #b91c1c; /* red-700 */
+}
+
+.record-indicator {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: #ef4444; /* red-500 */
+}
+
+.recording .record-indicator {
+  background-color: white;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
+}
